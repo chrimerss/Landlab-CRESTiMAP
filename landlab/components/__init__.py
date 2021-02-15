@@ -34,6 +34,8 @@ from .overland_flow import (
     OverlandFlow,
     OverlandFlowBates,
 )
+from .hydrologic_model import CREST
+
 from .pet import PotentialEvapotranspiration
 from .plant_competition_ca import VegCA
 from .potentiality_flowrouting import PotentialityFlowRouter
@@ -61,6 +63,7 @@ from .weathering import ExponentialWeatherer, ExponentialWeathererIntegrated
 COMPONENTS = [
     ChannelProfiler,
     ChiFinder,
+    CREST,
     DepressionFinderAndRouter,
     DepthDependentDiffuser,
     DepthDependentTaylorDiffuser,
