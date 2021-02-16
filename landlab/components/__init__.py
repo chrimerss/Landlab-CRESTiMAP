@@ -34,7 +34,7 @@ from .overland_flow import (
     OverlandFlow,
     OverlandFlowBates,
 )
-from .hydrologic_model import CREST
+from .hydrologic_model import CREST, CRESTHH
 
 from .pet import PotentialEvapotranspiration
 from .plant_competition_ca import VegCA

@@ -12,6 +12,8 @@ from .esri_ascii import (
     read_esri_ascii,
     write_esri_ascii,
 )
+
+from .read_geotif import read_geotif
 from .obj import write_obj
 from .shapefile import read_shapefile
 
@@ -29,4 +31,5 @@ __all__ = [
     "MismatchGridDataSizeError",
     "MismatchGridXYSpacing",
     "MismatchGridXYLowerLeft",
+    "read_geotif"
 ]

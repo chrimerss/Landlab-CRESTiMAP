@@ -209,7 +209,7 @@ class OverlandFlow(Component):
 
     _info = {
         "surface_water__depth": {
-            "dtype": float,
+            "dtype": np.float32,
             "intent": "inout",
             "optional": False,
             "units": "m",
@@ -217,7 +217,7 @@ class OverlandFlow(Component):
             "doc": "Depth of water on the surface",
         },
         "surface_water__discharge": {
-            "dtype": float,
+            "dtype": np.float32,
             "intent": "out",
             "optional": False,
             "units": "m3/s",
@@ -225,7 +225,7 @@ class OverlandFlow(Component):
             "doc": "Volumetric discharge of surface water",
         },
         "topographic__elevation": {
-            "dtype": float,
+            "dtype": np.float32,
             "intent": "in",
             "optional": False,
             "units": "m",
@@ -233,7 +233,7 @@ class OverlandFlow(Component):
             "doc": "Land surface topographic elevation",
         },
         "water_surface__gradient": {
-            "dtype": float,
+            "dtype": np.float32,
             "intent": "out",
             "optional": False,
             "units": "-",
