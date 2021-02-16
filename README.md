@@ -1,5 +1,7 @@
 # Landlab - CREST-iMAP
 
+![PyPI - Python Version](https://img.shields.io/pypi/pyversions/Django)![commit](https://img.shields.io/github/last-commit/chrimerss/Landlab-CRESTiMAP)
+
 This is a fork from Landlab, we implemented a coupled Hydrologic&Hydraulic (H&H) model based on Landlab structure.
 
 Original Landlab repo: https://github.com/landlab/landlab
@@ -19,3 +21,8 @@ We recommend using Anaconda to manage python dependencies. For now, this package
 conda env create --file=_environment.yml
 python setup.py develop
 ```
+
+## TODO
+- [ ] Add calibration and sensitivity schemes
+- [ ] Add control file and cmd support
+- [ ] Add user examples
