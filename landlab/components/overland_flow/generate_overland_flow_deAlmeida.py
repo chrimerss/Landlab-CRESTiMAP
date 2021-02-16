@@ -209,7 +209,7 @@ class OverlandFlow(Component):
 
     _info = {
         "surface_water__depth": {
-            "dtype": np.float32,
+            "dtype": float,
             "intent": "inout",
             "optional": False,
             "units": "m",
@@ -225,7 +225,7 @@ class OverlandFlow(Component):
             "doc": "Volumetric discharge of surface water",
         },
         "topographic__elevation": {
-            "dtype": np.float32,
+            "dtype": float,
             "intent": "in",
             "optional": False,
             "units": "m",
@@ -638,7 +638,7 @@ class OverlandFlow(Component):
                 )
 
             except ValueError:
-                self._mannings_n = self._grid["link"]["mannings_n"]
+                # self._mannings_n = self._grid["link"]["mannings_n"]
                 # if manning's n in a field
                 # calc discharge in horizontal
                 self._q[horiz] = (
@@ -677,7 +677,8 @@ class OverlandFlow(Component):
                     * abs(self._q[vert])
                     / self._h_links[vert] ** _SEVEN_OVER_THREE
                 )
-
+            # idx= np.argmax(self._q)
+            # print(self._q[idx], self._h[idx], self._mannings_n[idx], self._h_links[idx])
             # Now to return the array to its original length (length of number
             # of all links), we delete the extra 0.0 value from the end of the
             # array.
