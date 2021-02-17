@@ -1,17 +1,15 @@
 from .crest_simp import CREST
 from landlab.components import OverlandFlow
 from landlab import Component, FieldError
+from landlab.io import write_esri_ascii
 import xarray as xr
 import rioxarray
 import pandas as pd
 from datetime import datetime
 import numpy as np
 from netCDF4 import Dataset
-import multiprocess
-from pathos.multiprocessing import ProcessingPool as Pool
-from pathos.helpers import freeze_support
-freeze_support()
-import dill
+from affine import Affine
+from pyproj import Proj, transform
 import os
 import time
 
@@ -34,8 +32,29 @@ __date__ = '2021/02/16'
 
 # copyreg.pickle(types.MethodType, _pickle_method)
 
-def burn_gauge_loc_to_node(grid, lon, lat):
-    pass
+def map_gauge_loc_to_node(grid, lon, lat, from_proj, to_proj):
+    '''
+    Locate gauge to grid node ids.
+
+    Args:
+    ----------------------------
+    grid: RasterModelGrid
+    lon: float, longitude in EPSG:4326
+    lat: float
+
+    Output:
+    ----------------------------
+    node_id
+    '''
+    from_proj= Proj(from_proj)
+    to_proj= Proj(to_proj)
+    x,y= transform(from_proj, to_proj, lon, lat)
+    x_node= grid.x_of_node
+    y_node= grid.y_of_node
+    node_id= np.argmin((x-x_node)**2+ (y-y_node)**2)
+
+    return node_id
+
 
 class CRESTHH(Component):
     '''
@@ -151,6 +170,8 @@ class CRESTHH(Component):
                     outlet_ts=True,
                     gauges= None,
                     reinfiltration=True,
+                    output_dir= None,
+                    output_vars=[],
                     parallel=0):
         '''
         Args:
@@ -167,7 +188,10 @@ class CRESTHH(Component):
         evap_freq: str, evaporation frequency e.g., 2T
         evap_pattern: str, e.g., evap.%Y%m%d.%H%M%S.tif
         outlet: int, node number for basin outlet
+        gauges: dict of basin id's that output time series, e.g., {'08076700': 150}
         reinfiltration: bool, whether to activate reinfiltration scheme
+        output_dir: str; where to store variables
+        output_vars: list, list of variables to store, default is empty list
         parallel: int, number of cores to parallelize, if 0, then single thread
         '''
         super().__init__(grid)
@@ -183,6 +207,8 @@ class CRESTHH(Component):
         self.parallel= parallel
         self.outlet_id= outlet
         self.reinfiltration= True
+        self.output_dir= output_dir
+        self.output_vars= output_vars
 
         # configuration
         self.precip_time_stamp= pd.date_range(self.time_start,
@@ -191,10 +217,9 @@ class CRESTHH(Component):
         self.evap_time_stamp= pd.date_range(self.time_start,
                                             self.time_end,
                                              freq=evap_freq)
-        self.grid.add_field('SM', self.grid.at_node['SM0']/100.* self.grid.at_node['WM'],
-                         clobber=True)
+        self.grid.add_field('SM', self.grid.at_node['SM0'],clobber=True)
         #  initialize surface water depth
-        self.grid.add_zeros('surface_water__depth', at='node', clobber=True, dtype=np.float32)
+        self.grid.add_zeros('surface_water__depth', at='node', clobber=True, dtype=float)
         self.grid.at_node['surface_water__depth'].fill(1e-10)
 
         xllcorner, yllcorner= grid._xy_of_lower_left
@@ -209,7 +234,12 @@ class CRESTHH(Component):
 
         self.outlet_ts= outlet_ts
         if self.outlet_ts:
-            self.outlet= {'time':[], 'Q':[], 'H':[], 'P':[], 'SM':[]}
+            self.outlet= {}
+            self.monitored_id= []
+            if gauges is None: gauges= {'outlet': self.outlet_id}
+            for stn, node_id in gauges.items():
+                self.outlet[stn]= {'time':[], 'Q':[], 'H':[], 'P':[], 'SM':[]}
+                self.monitored_id.append(node_id)
 
 
     def run(self, verbose=True):
@@ -254,11 +284,6 @@ class CRESTHH(Component):
                 self.flow= OverlandFlow(self.grid, steep_slopes=True, mannings_n='friction')
 
             dt= self.flow.calc_time_step()
-            # if dt>1000: dt=1000
-            # if self.parallel>0:
-            #     self.pool.map(self.single, [i for i in range(self.m*self.n)])
-            # else:
-            #     [self.single(i) for i in range(self.m*self.n)]
 
             self.flow.run_one_step(dt=dt)
             self.grid['node']['surface_water__discharge']= self.flow.discharge_mapper(self.flow._q, convert_to_volume=True)
@@ -266,25 +291,42 @@ class CRESTHH(Component):
             time_now+= dt
             time_UTC+= pd.Timedelta(seconds=dt)
             if time_now//self.freq.total_seconds() not in freq_count:
+
+                time_freq= self.time_start+ self.freq*(time_now//self.freq.total_seconds())
+                #save indicated variables
+                if self.output_dir is not None:
+                    if not os.path.exists(self.output_dir):
+                        os.system('mkdir %s'%self.output_dir)
+                    self.export_to_asc(time_freq, self.output_dir, self.output_vars)
                 end_timer= time.time()
                 if verbose:
-                    print('time: %s\n----------------------------\nelapsed time: %.2fhrs\ntime step: %.2f sec\noutlet depth: %.2f\nSM: %.1f%%\nwater surface gradient: %.2f\ndischarge: %.2f\n-----------------------'%(
+                    print('time: %s\n----------------------------\nelapsed time: %.2f hrs\ntime step: %.2f sec\noutlet depth: %.2f m\nSM: %.1f%%\nwater surface gradient: %.2f\ndischarge: %.2f m^3/s\n-----------------------'%(
                              time_UTC,
                              (end_timer- start_timer)/3600.,
                              dt,
                              self.grid.at_node['surface_water__depth'][self.outlet_id],
-                             self.grid.at_node['SM'].mean()*100, self.flow._water_surface_slope.max(),
+                             self.grid.at_node['SM'].mean(), self.flow._water_surface_slope.max(),
                              self.grid['node']['surface_water__discharge'][self.outlet_id]))
                 if self.outlet_ts:
-                    self.outlet['time'].append((self.time_start+ self.freq*time_now//self.freq.total_seconds()).strftime('%Y-%m-%d %H:%M:%S'))
-                    self.outlet['H'].append(self.grid['node']['surface_water__depth'][self.outlet_id])
-                    self.outlet['Q'].append(self.grid['node']['surface_water__discharge'][self.outlet_id])
-                    self.outlet['P'].append(np.nanmean(P))
-                    self.outlet['SM'].append(np.nanmean(self.grid['node']['SM']))
+                    for i, _id in enumerate(self.monitored_id):
+                        stn= list(self.outlet.keys())[i]
+                        self.outlet[stn]['time'].append(time_freq.strftime('%Y-%m-%d %H:%M:%S'))
+                        self.outlet[stn]['H'].append(self.grid['node']['surface_water__depth'][_id])
+                        self.outlet[stn]['Q'].append(self.grid['node']['surface_water__discharge'][_id])
+                        self.outlet[stn]['P'].append(np.nanmean(P))
+                        self.outlet[stn]['SM'].append(np.nanmean(self.grid['node']['SM']))
                 freq_count.append(time_now//self.freq.total_seconds())
 
+        for stn in self.outlet.keys():
+            df= pd.DataFrame(index=self.outlet[stn]['time'])
+            df['discharge (m^3/s)']= self.outlet[stn]['Q']
+            df['water_depth (m)']= self.outlet[stn]['H']
+            df['soil_moisture (%)']= self.outlet[stn]['SM']
+            df['precipitation (mm/hr)']= self.outlet[stn]['P']
+            df.to_csv(os.path.join(self.output_dir, 'ts.%s.csv'%stn))
 
     def single_thread(self):
+        #reserve for future parallel implementation
         P= self.grid.at_node['P'][node]/1000./3600. #input unit in mm/hr
         ET= self.grid.at_node['ET'][node]/1000./3600./24. # input unit in mm/day
         B= self.grid.at_node['B'][node]
@@ -300,15 +342,18 @@ class CRESTHH(Component):
         self.grid.at_node['SM'][node]= SM
 
     def single(self, dt):
-        P= self.grid.at_node['P']/1000./3600. #input unit in mm/hr
-        ET= self.grid.at_node['ET']/1000./3600./24. # input unit in mm/day
-        B= self.grid.at_node['B']
-        IM= self.grid.at_node['IM']/100.
-        Ksat= self.grid.at_node['Ksat']
-        WM= self.grid.at_node['WM']
-        SM= (self.grid.at_node['SM']*WM)/1000.
-        depth= self.grid.at_node['surface_water__depth']
-        KE= self.grid.at_node['KE']
+        '''Node-based vertical transform is called'''
+        #only calculate active nodes
+        _active_node= (self.grid.status_at_node!=self.grid.BC_NODE_IS_CLOSED)
+        P= self.grid.at_node['P'][_active_node]/1000./3600. #input unit in mm/hr
+        ET= self.grid.at_node['ET'][_active_node]/1000./3600./24. # input unit in mm/day
+        B= self.grid.at_node['B'][_active_node]
+        IM= self.grid.at_node['IM'][_active_node]/100.
+        Ksat= self.grid.at_node['Ksat'][_active_node]
+        WM= self.grid.at_node['WM'][_active_node]
+        SM= (self.grid.at_node['SM'][_active_node]*WM)/1000./100.
+        depth= self.grid.at_node['surface_water__depth'][_active_node]
+        KE= self.grid.at_node['KE'][_active_node]
         DT= np.ones(len(KE) ).astype(np.float32)* dt
         if self.reinfiltration:
             array_in= np.stack([P, depth, ET, SM, Ksat, WM, B, IM, KE, DT])
@@ -318,10 +363,10 @@ class CRESTHH(Component):
         # SM, overland, interflow,actET=
         SM= array_out[0]
         # print('Maximum water depth by CREST: ', array_out[1].max())
-        self.grid.at_node['surface_water__depth']= array_out[1]
+        self.grid.at_node['surface_water__depth'][_active_node]= array_out[1]
         # self.flow._grid["link"]["surface_water__depth"]= self.flow._grid.map_max_of_link_nodes_to_link(array_out[1])
         SM*=(1000/WM)
-        self.grid.at_node['SM']= SM
+        self.grid.at_node['SM'][_active_node]= SM*100
 
     def single_numpy(self, args):
         # precipIn, double overland, double petIn, double SM, double Ksat,
@@ -338,19 +383,34 @@ class CRESTHH(Component):
 
         return field.values
 
-    def initialize_netcdf(self, path):
+    def export_to_asc(self, timestamp, dst_dir, fields, verbose=False):
+        '''
+        Export field to geotiff and reproject to EPSG:4326
+
+        Args:
+        -------------------
+        timestamp: str, %Y%m%d.%H%M%S
+        dst: str; output dir
+        field: list or any iterable str, e.g., ['SM', 'surface_water__depth']
+
+        Output:
+        --------------------
+        file in the name: %Y%m%d.%H%M%S_field,asc, e.g., 20170825.060000_surface_water__depth.asc
+        '''
+        for field in fields:
+            if field not in self.grid['node'].keys():
+                msg= 'invalid field name, only %s are suportted'%self.grid['node'].keys()
+                raise KeyError(msg)
+
+        dst= os.path.join(dst_dir, timestamp.strftime('%Y%m%d.%H%M%S.asc'))
+        write_esri_ascii(dst, self.grid, names=fields)
+        if verbose:
+            print(dst, 'saved!')
+
+
+    #TODO
+    def export_netcdf(self,field):
         pass
-
-    def export_geotif(self, field):
-        '''
-        Export field to geotiff
-        '''
-        if field not in self.grid['node'].keys():
-            msg= 'invalid field name, only %s are suportted'%self.grid['node'].keys()
-            raise KeyError(msg)
-        else:
-            field= self.grid.field_values('node', field)
-
 
     def _get_fname(self, path, pattern, time):
         fname= os.path.join(path, pattern.replace('%Y', '%04d'%time.year).replace('%m', '%02d'%time.month).\
@@ -366,3 +426,7 @@ class CRESTHH(Component):
 
     def ___call__(self,node):
         return self.single(node)
+
+    def __str__(self):
+        # print some basics, e.g., number of cells, dx,
+        pass

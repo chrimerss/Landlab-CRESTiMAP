@@ -34,7 +34,7 @@ from .overland_flow import (
     OverlandFlow,
     OverlandFlowBates,
 )
-from .hydrologic_model import CREST, CRESTHH
+from .hydrologic_model import CREST, CRESTHH, map_gauge_loc_to_node
 
 from .pet import PotentialEvapotranspiration
 from .plant_competition_ca import VegCA
@@ -64,6 +64,8 @@ COMPONENTS = [
     ChannelProfiler,
     ChiFinder,
     CREST,
+    CRESTHH,
+    map_gauge_loc_to_node,
     DepressionFinderAndRouter,
     DepthDependentDiffuser,
     DepthDependentTaylorDiffuser,

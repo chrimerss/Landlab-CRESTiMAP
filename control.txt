@@ -1,0 +1,21 @@
+[basic]
+shp = /Users/allen/OneDrive - University of Oklahoma/CRESTHH/subbasins/08076700.shp
+dem = /Users/allen/OneDrive - University of Oklahoma/CRESTHH/Case study - Harvey/CRM_Houston_NAm83/DEM_100m.tif
+crs = EPSG:4326
+to_crs= EPSG:32215
+
+[gauges]
+station= 08075900
+x= 266648.7618
+y= 3316464.1819
+crs= EPSG:32215
+
+
+
+[parameter]
+B=/Users/allen/OneDrive - University of Oklahoma/CRESTHH/data/CREST_para/b_10m.tif
+facor=1
+WM=/Users/allen/OneDrive - University of Oklahoma/CRESTHH/data/CREST_para/wm_10m.tif
+factor=1
+Ksat=/Users/allen/OneDrive - University of Oklahoma/CRESTHH/data/CREST_para/ksat.tif
+factor=1

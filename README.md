@@ -26,3 +26,7 @@ python setup.py develop
 - [ ] Add calibration and sensitivity schemes
 - [ ] Add control file and cmd support
 - [ ] Add user examples
+
+## Contact
+
+Allen Li (li1995@ou.edu)

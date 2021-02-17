@@ -73,7 +73,7 @@ setup(
     author_email="eric.hutton@colorado.edu",
     url="https://github.com/landlab",
     description="Plugin-based component modeling tool.",
-    long_description=open("README.rst").read(),
+    long_description=open("README.md").read(),
     python_requires=">=3.6",
     setup_requires=["cython", "numpy"],
     install_requires=open("requirements.txt", "r").read().splitlines(),
