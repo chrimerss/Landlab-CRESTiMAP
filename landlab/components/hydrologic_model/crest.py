@@ -12,25 +12,31 @@ from affine import Affine
 from pyproj import Proj, transform
 import os
 import time
+import multiprocess
+# from pathos.multiprocessing import ProcessingPool as Pool
+from multiprocessing.pool import ThreadPool as Pool
+from pathos.helpers import freeze_support
+freeze_support()
+import dill
 
 __author__ = 'Allen (Zhi) Li'
 __date__ = '2021/02/16'
 
 #######################################
 # Pickle class in case for parallel computing
-# import sys
-# import types
-# #Difference between Python3 and 2
-# if sys.version_info[0] < 3:
-#     import copy_reg as copyreg
-# else:
-#     import copyreg
+import sys
+import types
+#Difference between Python3 and 2
+if sys.version_info[0] < 3:
+    import copy_reg as copyreg
+else:
+    import copyreg
 
-# def _pickle_method(m):
-#     class_self = m.im_class if m.im_self is None else m.im_self
-#     return getattr, (class_self, m.im_func.func_name)
+def _pickle_method(m):
+    class_self = m.im_class if m.im_self is None else m.im_self
+    return getattr, (class_self, m.im_func.func_name)
 
-# copyreg.pickle(types.MethodType, _pickle_method)
+copyreg.pickle(types.MethodType, _pickle_method)
 
 def map_gauge_loc_to_node(grid, lon, lat, from_proj, to_proj):
     '''
@@ -172,7 +178,9 @@ class CRESTHH(Component):
                     reinfiltration=True,
                     output_dir= None,
                     output_vars=[],
-                    parallel=0):
+                    excess_rain=False,
+                    parallel=0,
+                    verbose=True):
         '''
         Args:
         ------------------------------------------------------------
@@ -192,6 +200,7 @@ class CRESTHH(Component):
         reinfiltration: bool, whether to activate reinfiltration scheme
         output_dir: str; where to store variables
         output_vars: list, list of variables to store, default is empty list
+        excess_rain: bool, indicate whether input is excess rain. If so, only routing module is activated
         parallel: int, number of cores to parallelize, if 0, then single thread
         '''
         super().__init__(grid)
@@ -209,6 +218,9 @@ class CRESTHH(Component):
         self.reinfiltration= True
         self.output_dir= output_dir
         self.output_vars= output_vars
+        self.excess_rain= excess_rain
+        self.verbose= verbose
+        self.gauges= gauges
 
         # configuration
         self.precip_time_stamp= pd.date_range(self.time_start,
@@ -230,7 +242,7 @@ class CRESTHH(Component):
         self.m, self.n= self.grid.shape
 
         if parallel>0:
-            self.pool= Pool(nodes=self.parallel)
+            self.pool= Pool(self.parallel)
 
         self.outlet_ts= outlet_ts
         if self.outlet_ts:
@@ -242,7 +254,7 @@ class CRESTHH(Component):
                 self.monitored_id.append(node_id)
 
 
-    def run(self, verbose=True):
+    def run(self):
 
         end_seconds= (self.time_end- self.time_start).total_seconds()
         time_now= 0
@@ -251,6 +263,8 @@ class CRESTHH(Component):
         evap_count= []
         freq_count= []
         start_timer= time.time()
+        _node_status= (self.grid.status_at_node!= self.grid.BC_NODE_IS_CLOSED)
+        _active_nodes= np.arange(len(_node_status))[_node_status]
         while time_now<end_seconds:
             # update evaporation
             if time_now//pd.Timedelta(self.evap_freq).total_seconds() not in evap_count:
@@ -280,10 +294,16 @@ class CRESTHH(Component):
 
                 self.grid.add_field('P', P, units='mm/h', clobber=True, dtype=float)
                 self.grid.add_field('ET', ET, units='mm/d', clobber=True, dtype=np.float32)
-                self.single(pd.Timedelta(self.precip_freq).total_seconds())
+                if not self.excess_rain:
+                    if self.parallel>0:
+                        self.pool.map(self.single_thread, _active_nodes)
+                    else:
+                        self.single(pd.Timedelta(self.precip_freq).total_seconds(), _active_nodes)
+                else:
+                    self.grid.at_node['surface_water__depth']+= self.grid.at_node['P']/pd.Timedelta(self.precip_freq.total_seconds())/1000.
                 self.flow= OverlandFlow(self.grid, steep_slopes=True, mannings_n='friction')
 
-            dt= self.flow.calc_time_step()
+                dt= self.flow.calc_time_step()
 
             self.flow.run_one_step(dt=dt)
             self.grid['node']['surface_water__discharge']= self.flow.discharge_mapper(self.flow._q, convert_to_volume=True)
@@ -299,7 +319,7 @@ class CRESTHH(Component):
                         os.system('mkdir %s'%self.output_dir)
                     self.export_to_asc(time_freq, self.output_dir, self.output_vars)
                 end_timer= time.time()
-                if verbose:
+                if self.verbose:
                     print('time: %s\n----------------------------\nelapsed time: %.2f hrs\ntime step: %.2f sec\noutlet depth: %.2f m\nSM: %.1f%%\nwater surface gradient: %.2f\ndischarge: %.2f m^3/s\n-----------------------'%(
                              time_UTC,
                              (end_timer- start_timer)/3600.,
@@ -316,16 +336,16 @@ class CRESTHH(Component):
                         self.outlet[stn]['P'].append(np.nanmean(P))
                         self.outlet[stn]['SM'].append(np.nanmean(self.grid['node']['SM']))
                 freq_count.append(time_now//self.freq.total_seconds())
+        if self.output_dir is not None:
+            for stn in self.outlet.keys():
+                df= pd.DataFrame(index=self.outlet[stn]['time'])
+                df['discharge (m^3/s)']= self.outlet[stn]['Q']
+                df['water_depth (m)']= self.outlet[stn]['H']
+                df['soil_moisture (%)']= self.outlet[stn]['SM']
+                df['precipitation (mm/hr)']= self.outlet[stn]['P']
+                df.to_csv(os.path.join(self.output_dir, 'ts.%s.csv'%stn))
 
-        for stn in self.outlet.keys():
-            df= pd.DataFrame(index=self.outlet[stn]['time'])
-            df['discharge (m^3/s)']= self.outlet[stn]['Q']
-            df['water_depth (m)']= self.outlet[stn]['H']
-            df['soil_moisture (%)']= self.outlet[stn]['SM']
-            df['precipitation (mm/hr)']= self.outlet[stn]['P']
-            df.to_csv(os.path.join(self.output_dir, 'ts.%s.csv'%stn))
-
-    def single_thread(self):
+    def single_thread(self, node):
         #reserve for future parallel implementation
         P= self.grid.at_node['P'][node]/1000./3600. #input unit in mm/hr
         ET= self.grid.at_node['ET'][node]/1000./3600./24. # input unit in mm/day
@@ -333,18 +353,18 @@ class CRESTHH(Component):
         IM= self.grid.at_node['IM'][node]/100.
         Ksat= self.grid.at_node['Ksat'][node]
         WM= self.grid.at_node['WM'][node]
-        SM= (self.grid.at_node['SM'][node]*WM)/1000.
+        SM= (self.grid.at_node['SM'][node]*WM)/1000./100.
         depth= self.grid.at_node['surface_water__depth'][node]
         KE= self.grid.at_node['KE'][node]
-        SM, overland, interflow,actET= CREST(P, depth, ET, SM, Ksat, WM, B, IM, KE, dt)
+        SM, overland, interflow,actET= CREST(P, depth, ET, SM, Ksat, WM, B, IM, KE, pd.Timedelta(self.precip_freq).total_seconds())
         self.grid.at_node['surface_water__depth'][node]= overland
         SM*=(1000/WM)
-        self.grid.at_node['SM'][node]= SM
+        self.grid.at_node['SM'][node]= SM*100
 
-    def single(self, dt):
+    def single(self, dt, _active_node):
         '''Node-based vertical transform is called'''
         #only calculate active nodes
-        _active_node= (self.grid.status_at_node!=self.grid.BC_NODE_IS_CLOSED)
+        # _active_node= (self.grid.status_at_node!=self.grid.BC_NODE_IS_CLOSED)
         P= self.grid.at_node['P'][_active_node]/1000./3600. #input unit in mm/hr
         ET= self.grid.at_node['ET'][_active_node]/1000./3600./24. # input unit in mm/day
         B= self.grid.at_node['B'][_active_node]
@@ -427,6 +447,10 @@ class CRESTHH(Component):
     def ___call__(self,node):
         return self.single(node)
 
+    def __repr__(self):
+        # print some basics, e.g., number of cells, dx,
+        return 'Model domain: %s\nspacing: %s m\nModel parameters: %s\nActive node numbers: %d\nObserving gauges: %s'%(self.grid.extent, self.grid.spacing, self.grid.at_node.keys(), (self.grid._node_status!=self.grid.BC_NODE_IS_CLOSED).sum(), self.gauges)
+
     def __str__(self):
         # print some basics, e.g., number of cells, dx,
-        pass
+        return 'Model domain: %s\nspacing: %s m\nModel parameters: %s\nActive node numbers: %d\nObserving gauges: %s'%(self.grid.extent, self.grid.spacing, self.grid.at_node.keys(), (self.grid._node_status!=self.grid.BC_NODE_IS_CLOSED).sum(), self.gauges)
