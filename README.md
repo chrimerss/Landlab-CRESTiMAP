@@ -35,9 +35,23 @@ conda env create --file=_environment.yml
 python setup.py develop
 ```
 
+**Run model**
+
+Modify main.py file and run
+
+```python
+python main.py
+```
+
+Or to profile the program, visualize with SnakeViz
+```python
+python -m cProfile -o profile_res.txt main.py
+snakeviz profile_res.txt
+```
+
 ## TODO
 - [ ] Add calibration and sensitivity schemes
-- [ ] Add control file and cmd support
+- [x] Add control file and cmd support
 - [ ] Add user examples
 
 ## Contact
