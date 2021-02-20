@@ -35,12 +35,18 @@ conda env create --file=_environment.yml
 python setup.py develop
 ```
 
-**Run model**
+**Run the model**
 
 Modify main.py file and run
 
 ```python
 python main.py
+```
+
+Or use jupyter notebook/lab to load the interface
+
+```python
+%load main.py
 ```
 
 Or to profile the program, visualize with SnakeViz

@@ -5,7 +5,7 @@ An interface to control CREST-iMAP
 # Define some variables
 # ============basics=============#
 BASIN_SHP= '/Users/allen/OneDrive - University of Oklahoma/CRESTHH/subbasins/08076700.shp'
-DEM= '/Users/allen/OneDrive - University of Oklahoma/CRESTHH/Case study - Harvey/CRM_Houston_NAm83/DEM_100m.tif'
+DEM= '/Users/allen/OneDrive - University of Oklahoma/CRESTHH/reinfiltration/DSM.tif'
 FROM_CRS= 'EPSG:4326'
 TO_CRS = 'EPSG:32215'
 
@@ -19,7 +19,7 @@ GAUGE3_LOC= (284362.476,3313541.542)
 GAUGE3_NAME= '08076180'
 GAUGE4_LOC= (274446.6892,3305767.1611)
 GAUGE4_NAME= '08076500'
-OUTLET_LOC= (284219.573,3302832.615)
+OUTLET_LOC= (284129.440,3302957.433)
 OUTLET_NAME= 'outlet'
 GAUGES= {GAUGE1_NAME:GAUGE1_LOC,
         GAUGE2_NAME: GAUGE2_LOC,
@@ -40,7 +40,7 @@ KE= 1
 # ============Forcing=============#
 RAIN_PATH = '/Users/allen/OneDrive - University of Oklahoma/CRESTHH/data/mrms201708/'
 # recognizable freq. D for day, H for hour, T for minute, S for second
-RAIN_FREQ= '1H'
+RAIN_FREQ= '10T'
 RAIN_PATTERN= 'PrecipRate_00.00_%Y%m%d-%H%M%S.grib2-var0-z0.tif'
 EVAP_PATH = '/Users/allen/OneDrive - University of Oklahoma/CRESTHH/data/evap/'
 EVAP_FREQ = '1D'
@@ -49,14 +49,14 @@ EVAP_PATTERN= 'cov_et%y%m%d.asc.tif'
 # ============System==============#
 # date to start e.g., 20170826110000
 START= '20170826110000'
-END= '20170827000000'
+END= '20170830000000'
 FREQ= '1H'
 OUTPUT_TS=True
 REINFILTRATION=True
-EXCESS_RAIN=False
+EXCESS_RAIN=True
 FILL_SINK= False
 #repo to output asc file, set to None if no output
-OUTPUT_DIR=None
+OUTPUT_DIR='results'
 # vars to output, only support 'surface_water__depth'|'surface_water__discharge'|'SM'
 OUTPUT_VARS= ['surface_water__depth', 'surface_water__discharge']
 #choose to parallelize, 0: disable, >0: number of cores used to parallelize
@@ -97,6 +97,8 @@ landing="""
   \\_____| |_|  \\_\\ |______| |_____/     |_|             |_| |_|  |_| /_/    \\_\\ |_|
 
 =======================================================================================
+
+Version: 1.1
         """
 
 if __name__ == '__main__':
@@ -156,7 +158,7 @@ if __name__ == '__main__':
                      gauges= gauges,
                      outlet_ts= OUTPUT_TS,
                      reinfiltration= REINFILTRATION,
-                     excess_rain=False,
+                     excess_rain=EXCESS_RAIN,
                      output_dir= OUTPUT_DIR,
                      output_vars= OUTPUT_VARS,
                      parallel=PARALLEL,

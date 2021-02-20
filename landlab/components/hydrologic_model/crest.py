@@ -300,10 +300,10 @@ class CRESTHH(Component):
                     else:
                         self.single(pd.Timedelta(self.precip_freq).total_seconds(), _active_nodes)
                 else:
-                    self.grid.at_node['surface_water__depth']+= self.grid.at_node['P']/pd.Timedelta(self.precip_freq.total_seconds())/1000.
+                    self.grid.at_node['surface_water__depth']+= self.grid.at_node['P']/pd.Timedelta(self.precip_freq).total_seconds()/1000.
                 self.flow= OverlandFlow(self.grid, steep_slopes=True, mannings_n='friction')
 
-                dt= self.flow.calc_time_step()
+            dt= self.flow.calc_time_step()
 
             self.flow.run_one_step(dt=dt)
             self.grid['node']['surface_water__discharge']= self.flow.discharge_mapper(self.flow._q, convert_to_volume=True)
@@ -336,7 +336,7 @@ class CRESTHH(Component):
                         self.outlet[stn]['P'].append(np.nanmean(P))
                         self.outlet[stn]['SM'].append(np.nanmean(self.grid['node']['SM']))
                 freq_count.append(time_now//self.freq.total_seconds())
-        if self.output_dir is not None:
+        if self.outlet_ts and self.output_dir is not None:
             for stn in self.outlet.keys():
                 df= pd.DataFrame(index=self.outlet[stn]['time'])
                 df['discharge (m^3/s)']= self.outlet[stn]['Q']
@@ -445,12 +445,12 @@ class CRESTHH(Component):
         return self_dict
 
     def ___call__(self,node):
-        return self.single(node)
+        return self.single_thread(node)
 
     def __repr__(self):
         # print some basics, e.g., number of cells, dx,
-        return 'Model domain: %s\nspacing: %s m\nModel parameters: %s\nActive node numbers: %d\nObserving gauges: %s'%(self.grid.extent, self.grid.spacing, self.grid.at_node.keys(), (self.grid._node_status!=self.grid.BC_NODE_IS_CLOSED).sum(), self.gauges)
+        return 'Model domain: %s\nspacing: %s m\nModel parameters: %s\nActive node numbers: %d\nObserving gauges: %s\nReinfiltration: %s\nExcess rainfall: %s'%(self.grid.extent, self.grid.spacing, self.grid.at_node.keys(), (self.grid._node_status!=self.grid.BC_NODE_IS_CLOSED).sum(), self.gauges, self.reinfiltration, self.excess_rain)
 
     def __str__(self):
         # print some basics, e.g., number of cells, dx,
-        return 'Model domain: %s\nspacing: %s m\nModel parameters: %s\nActive node numbers: %d\nObserving gauges: %s'%(self.grid.extent, self.grid.spacing, self.grid.at_node.keys(), (self.grid._node_status!=self.grid.BC_NODE_IS_CLOSED).sum(), self.gauges)
+        return 'Model domain: %s\nspacing: %s m\nModel parameters: %s\nActive node numbers: %d\nObserving gauges: %s\nReinfiltration: %s\nExcess rainfall: %s'%(self.grid.extent, self.grid.spacing, self.grid.at_node.keys(), (self.grid._node_status!=self.grid.BC_NODE_IS_CLOSED).sum(), self.gauges, self.reinfiltration, self.excess_rain)

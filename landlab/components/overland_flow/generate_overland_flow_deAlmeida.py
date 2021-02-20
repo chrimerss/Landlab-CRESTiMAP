@@ -599,7 +599,7 @@ class OverlandFlow(Component):
             horiz = self._horizontal_ids
             vert = self._vertical_ids
             # Now we calculate discharge in the horizontal direction
-            if isinstance(self._mannings_n,float):
+            try:
                 self._q[horiz] = (
                     self._theta * self._q[horiz]
                     + (1.0 - self._theta)
@@ -637,7 +637,7 @@ class OverlandFlow(Component):
                     / self._h_links[vert] ** _SEVEN_OVER_THREE
                 )
 
-            else:
+            except ValueError:
                 # self._mannings_n = self._grid["link"]["mannings_n"]
                 # if manning's n in a field
                 # calc discharge in horizontal
