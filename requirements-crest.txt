@@ -15,7 +15,6 @@ cftime==1.4.1
 chardet==4.0.0
 click==7.1.2
 click-plugins==1.1.1
-cligj @ file:///home/conda/feedstock_root/build_artifacts/cligj_1605902088619/work
 colorcet==2.0.6
 coverage==5.4
 coveralls==3.0.0
@@ -23,13 +22,13 @@ cycler==0.10.0
 dask==2021.2.0
 decorator==4.4.2
 defusedxml==0.6.0
-dill @ file:///home/conda/feedstock_root/build_artifacts/dill_1604312823872/work
+dill==0.3.3
 docopt==0.6.2
 entrypoints==0.3
 Fiona==1.8.18
 flake8==3.8.4
 GDAL==3.1.4
-geopandas @ file:///home/conda/feedstock_root/build_artifacts/geopandas_1611609867122/work
+geopandas==0.8.2
 holoviews==1.14.1
 idna==2.10
 iniconfig==1.1.1
@@ -48,13 +47,12 @@ jupyter-core==4.7.1
 jupyterlab-pygments==0.1.2
 jupyterlab-widgets==1.0.0
 kiwisolver==1.3.1
--e git+git@github.com:chrimerss/Landlab-CRESTiMAP@c7f1d708cf14a725bdd532469be471866fb3535f#egg=landlab
 Markdown==3.3.3
 MarkupSafe==1.1.1
 matplotlib==3.3.4
 mccabe==0.6.1
 mistune==0.8.4
-multiprocess @ file:///Users/runner/miniforge3/conda-bld/multiprocess_1610094510751/work
+multiprocess==0.70.11.1
 munch==2.5.0
 mypy-extensions==0.4.3
 nbclient==0.5.2
@@ -63,7 +61,7 @@ nbformat==5.1.2
 nest-asyncio==1.5.1
 netCDF4==1.5.6
 notebook==6.2.0
-numpy @ file:///Users/runner/miniforge3/conda-bld/numpy_1612953049088/work
+numpy==1.20.1
 packaging==20.9
 pandas==1.2.2
 pandocfilters==1.4.3
@@ -89,28 +87,22 @@ pyct==0.4.8
 pyflakes==2.2.0
 Pygments==2.8.0
 pyparsing==2.4.7
-pyproj @ file:///Users/runner/miniforge3/conda-bld/pyproj_1602663446955/work
 pyrsistent==0.17.3
 pyshp==2.1.3
 pytest==6.2.2
 pytest-cov==2.11.1
 pytest-datadir==1.3.1
 python-dateutil==2.8.1
-pytz @ file:///home/conda/feedstock_root/build_artifacts/pytz_1612179539967/work
 pyviz-comms==2.0.1
 PyYAML==5.4.1
 pyzmq==22.0.3
 qtconsole==5.0.2
 QtPy==1.9.0
-rasterio @ file:///Users/runner/miniforge3/conda-bld/rasterio_1611604321473/work
+rasterio==1.2.0
 regex==2020.11.13
 requests==2.25.1
-rioxarray @ file:///home/conda/feedstock_root/build_artifacts/rioxarray_1612225142857/work
-Rtree @ file:///Users/runner/miniforge3/conda-bld/rtree_1610147555246/work
-scipy @ file:///Users/runner/miniforge3/conda-bld/scipy_1612531716228/work
+rioxarray==0.2.0
 Send2Trash==1.5.0
-Shapely @ file:///Users/runner/miniforge3/conda-bld/shapely_1611317108550/work
-six @ file:///home/conda/feedstock_root/build_artifacts/six_1590081179328/work
 snuggs==1.4.7
 statsmodels==0.12.2
 terminado==0.9.2
@@ -126,4 +118,3 @@ urllib3==1.26.3
 wcwidth==0.2.5
 webencodings==0.5.1
 widgetsnbextension==3.5.1
-xarray @ file:///home/conda/feedstock_root/build_artifacts/xarray_1606798576866/work
