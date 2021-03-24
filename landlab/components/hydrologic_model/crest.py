@@ -70,31 +70,31 @@ class CRESTHH(Component):
     _unit_agnostic = False
     _info = {
     # =============Input Parameters==================
-        "SM0":{
+        "WM__param":{
             "dtype": np.float32,
             "intent": "in",
             "optional": False,
-            "units": "%",
-            "mapping": "node",
-            "doc": "Initial Soil Moisture"
-        },
-        "WM":{
-            "dtype": np.float32,
-            "intent": "in",
-            "optional": False,
-            "units": "mm",
+            "units": "m",
             "mapping": "node",
             "doc": "Mean Max Soil Capacity"
         },
-        "friction":{
+        "IM__param":{
             "dtype": np.float32,
             "intent": "in",
             "optional": False,
-            "units": "-",
-            "mapping": "link",
-            "doc": "Initial Soil Moisture"
+            "units":"%",
+            "mapping": "node",
+            "doc":"impervious area ratio for generating fast runoff"
         },
-        "B":{
+        "manning_n__param":{
+            "dtype": np.float32,
+            "intent": "in",
+            "optional": True,
+            "units": "-",
+            "mapping": "node",
+            "doc": "manning roughness"
+        },
+        "B__param":{
             "dtype": np.float32,
             "intent": "in",
             "optional": False,
@@ -102,15 +102,7 @@ class CRESTHH(Component):
             "mapping": "node",
             "doc": "Exponent of VIC model"
         },
-        "IM":{
-            "dtype": np.float32,
-            "intent": "in",
-            "optional": False,
-            "units": "%",
-            "mapping": "node",
-            "doc": "Impervious area ratio"
-        },
-        "KE":{
+        "KE__param":{
             "dtype": np.float32,
             "intent": "in",
             "optional": False,
@@ -118,15 +110,79 @@ class CRESTHH(Component):
             "mapping": "node",
             "doc": "Evaporation factor -> from PET to AET"
         },
-    # ==============States===================
-        "SM":{
+        "Ksat_groundwater__param":{
+            "dtype": np.float32,
+            "intent": "in",
+            "optional": False,
+            "units": "m/s",
+            "mapping": "link",
+            "doc": "horizontal hydraulic conductivity in groundwater"
+        },
+        "Ksat_soil__param":{
+            "dtype": np.float32,
+            "intent": "in",
+            "optional": False,
+            "units": "m/s",
+            "mapping": "node",
+            "doc": "vertical Soil saturated hydraulic conductivity in vadose zone"
+        },
+        "topographic__elevation":{
+            "dtype": np.float32,
+            "intent": "in",
+            "optional": False,
+            "units": "m",
+            "mapping": "node",
+            "doc": "Surface elevation"
+        },
+        "aquifer_base__elevation":{
+            "dtype": np.float32,
+            "intent": "in",
+            "optional": False,
+            "units": "m",
+            "mapping": "node",
+            "doc": "Base elevation of aquifer"
+        },
+        "surface_water__discharge":{
             "dtype": np.float32,
             "intent": "out",
             "optional": False,
-            "units": "%",
+            "units": "m^3/s",
             "mapping": "node",
-            "doc": "Soil Moisture"
-        }}
+            "doc": "Surface discharge"
+        },
+        "ground_water__discharge":{
+            "dtype": np.float32,
+            "intent": "out",
+            "optional": False,
+            "units": "m^3/s",
+            "mapping": "node",
+            "doc": "Groundwater discharge"
+        },
+        "soil_moisture__content":{
+            "dtype": np.float32,
+            "intent": "inout",
+            "optional": False,
+            "units": "m",
+            "mapping": "node",
+            "doc": "Soil Moisture Content"
+        },
+        "surface_water__elevation":{
+            "dtype": np.float32,
+            "intent": "out",
+            "optional": False,
+            "units": "m",
+            "mapping": "node",
+            "doc": "Surface water elevation"
+        },
+        "ground_water__elevation":{
+            "dtype": np.float32,
+            "intent": "inout",
+            "optional": True,
+            "units": "m",
+            "mapping": "node",
+            "doc": "Ground water table"
+        }
+        }
     #     "surface_water__depth": {
     #         "dtype": float,
     #         "intent": "inout",
@@ -204,6 +260,7 @@ class CRESTHH(Component):
         parallel: int, number of cores to parallelize, if 0, then single thread
         '''
         super().__init__(grid)
+        self.initialize_output_fields()
         self.time_start= pd.to_datetime(start, format='%Y%m%d%H%M%S')
         self.time_end= pd.to_datetime(end, format='%Y%m%d%H%M%S')
         self.freq= pd.Timedelta(freq)
@@ -253,6 +310,15 @@ class CRESTHH(Component):
                 self.outlet[stn]= {'time':[], 'Q':[], 'H':[], 'P':[], 'SM':[]}
                 self.monitored_id.append(node_id)
 
+        self._gw= Groundwater(
+                    self.grid,
+                    hydraulic_conductivity=self._grid['node']['Ksat_groundwater__param'],
+                    porosity=1,
+                    recharge_rate=0,
+                    regularization_f=0.01,
+                    courant_coefficient=1)
+
+        self.flow= OverlandFlow(self.grid, steep_slopes=True, mannings_n='manning_n__param')
 
     def run(self):
 
@@ -301,7 +367,7 @@ class CRESTHH(Component):
                         self.single(pd.Timedelta(self.precip_freq).total_seconds(), _active_nodes)
                 else:
                     self.grid.at_node['surface_water__depth']+= self.grid.at_node['P']/pd.Timedelta(self.precip_freq).total_seconds()/1000.
-                self.flow= OverlandFlow(self.grid, steep_slopes=True, mannings_n='friction')
+
 
             dt= self.flow.calc_time_step()
 

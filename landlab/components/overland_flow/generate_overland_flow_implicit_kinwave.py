@@ -229,7 +229,7 @@ class KinwaveImplicitOverlandFlow(Component):
         super().__init__(grid)
         # Store parameters and do unit conversion
 
-        self._runoff_rate = runoff_rate / 3600000.0  # convert to m/s
+        self._runoff_rate = runoff_rate # m/s
         self._vel_coef = 1.0 / roughness  # do division now to save time
         self._changing_topo = changing_topo
         self._depth_exp = depth_exp
@@ -283,7 +283,7 @@ class KinwaveImplicitOverlandFlow(Component):
     @runoff_rate.setter
     def runoff_rate(self, new_rate):
         assert new_rate > 0
-        self._runoff_rate = new_rate / 3600000.0  # convert to m/s
+        self._runoff_rate = new_rate  #  m/s
 
     @property
     def vel_coef(self):

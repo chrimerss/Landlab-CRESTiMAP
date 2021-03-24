@@ -133,6 +133,7 @@ class OverlandFlowBates(Component):
             "surface_water__discharge",
             at="link",
             units=self._info["surface_water__discharge"]["units"],
+            clobber=True
         )
 
         # Pre-calculated values included for speed.
@@ -208,54 +209,57 @@ class OverlandFlowBates(Component):
 
         # If no dt is provided, one will be calculated using
         # self._gear_time_step()
-        if dt is None:
-            self.calc_time_step()
 
-        # In case another component has added data to the fields, we just reset
-        # our water depths, topographic elevations and water discharge
-        # variables to the fields.
-        # self._h = self._grid['node']['surface_water__depth']
-        self._z = self._grid["node"]["topographic__elevation"]
-        self._q = self._grid["link"]["surface_water__discharge"]
+        self._dt= self.calc_time_step()
+        # _elapsed_time
+        while self._elapsed_time<dt:
 
-        # Here we identify the core nodes and active link ids for later use.
-        self._core_nodes = self._grid.core_nodes
-        self._active_links = self._grid.active_links
+            # In case another component has added data to the fields, we just reset
+            # our water depths, topographic elevations and water discharge
+            # variables to the fields.
+            # self._h = self._grid['node']['surface_water__depth']
+            self._z = self._grid["node"]["topographic__elevation"]
+            self._q = self._grid["link"]["surface_water__discharge"]
 
-        # Per Bates et al., 2010, this solution needs to find the difference
-        # between the highest water surface in the two cells and the highest
-        # bed elevation
-        zmax = self._grid.map_max_of_link_nodes_to_link(self._z)
-        w = self._h + self._z
-        wmax = self._grid.map_max_of_link_nodes_to_link(w)
-        hflow = wmax[self._grid.active_links] - zmax[self._grid.active_links]
+            # Here we identify the core nodes and active link ids for later use.
+            self._core_nodes = self._grid.core_nodes
+            self._active_links = self._grid.active_links
 
-        # Now we calculate the slope of the water surface elevation at active
-        # links
-        water_surface_slope = self._grid.calc_grad_at_link(w)[self._grid.active_links]
+            # Per Bates et al., 2010, this solution needs to find the difference
+            # between the highest water surface in the two cells and the highest
+            # bed elevation
+            zmax = self._grid.map_max_of_link_nodes_to_link(self._z)
+            w = self._h + self._z
+            wmax = self._grid.map_max_of_link_nodes_to_link(w)
+            hflow = wmax[self._grid.active_links] - zmax[self._grid.active_links]
 
-        # Here we calculate discharge at all active links using Eq. 11 from
-        # Bates et al., 2010
-        self._q[self._active_links] = (
-            self._q[self._active_links]
-            - self._g * hflow * self._dt * water_surface_slope
-        ) / (
-            1.0
-            + self._g
-            * hflow
-            * self._dt
-            * self._mannings_n_squared
-            * abs(self._q[self._active_links])
-            / hflow ** self._ten_thirds
-        )
+            # Now we calculate the slope of the water surface elevation at active
+            # links
+            water_surface_slope = self._grid.calc_grad_at_link(w)[self._grid.active_links]
 
-        # Update our water depths
-        dhdt = self._rainfall_intensity - self._grid.calc_flux_div_at_node(self._q)
+            # Here we calculate discharge at all active links using Eq. 11 from
+            # Bates et al., 2010
+            self._q[self._active_links] = (
+                self._q[self._active_links]
+                - self._g * hflow * self._dt * water_surface_slope
+            ) / (
+                1.0
+                + self._g
+                * hflow
+                * self._dt
+                * self._mannings_n_squared
+                * abs(self._q[self._active_links])
+                / hflow ** self._ten_thirds
+            )
 
-        self._h[self._core_nodes] = (
-            self._h[self._core_nodes] + dhdt[self._core_nodes] * self._dt
-        )
+            # Update our water depths
+            dhdt = self._rainfall_intensity - self._grid.calc_flux_div_at_node(self._q)
 
-        # And reset our field values with the newest water depth and discharge.
-        self._grid.at_node["surface_water__depth"] = self._h
-        self._grid.at_link["surface_water__discharge"] = self._q
+            self._h[self._core_nodes] = (
+                self._h[self._core_nodes] + dhdt[self._core_nodes] * self._dt
+            )
+
+            # And reset our field values with the newest water depth and discharge.
+            self._grid.at_node["surface_water__depth"] = self._h
+            self._grid.at_link["surface_water__discharge"] = self._q
+            self._elapsed_time+= self._dt

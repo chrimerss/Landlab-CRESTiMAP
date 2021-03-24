@@ -258,7 +258,6 @@ class CoupledHydrologicProcess(Component):
         self.grid.add_zeros('surface_water__discharge', clobber=True, dtype=np.float32, at='node')
         self.grid.add_zeros('surface_water__discharge', clobber=True, dtype=np.float32, at='link')
         self.grid.add_zeros('ground_water__discharge', clobber=True, dtype=np.float32, at='node')
-        # self.grid.add_
 
         self.zsf= self.grid['node']['surface_water__elevation']
         self.zsf_base= self.grid['node']['topographic__elevation']
@@ -341,49 +340,46 @@ class CoupledHydrologicProcess(Component):
         zsf[zsf<self.zsf_base]= self.zsf_base[zsf<self.zsf_base]
         zsf[zsf<zgw]= zgw[zsf<zgw]
         hsf= zsf - self.zsf_base
-        print(hsf)
         hsf_link= self.grid.map_max_of_link_nodes_to_link(hsf)
         hsf_link[self.grid.status_at_link==LinkStatus.INACTIVE]= 0.0
         # Here we first do infiltration and recharge, then lateral flow
         #infiltration
         # cond 1: if groundwater table > surface water stage, where exfiltration occurs
         # here we use negative infiltration value
-        cond1= np.where(zgw>zsf)
+        cond1= np.where(zgw>=zsf)
         _infiltration= np.zeros_like(self.zsf_base)
         _infiltration[cond1]= 0
         SM[cond1]= self.WM[cond1]
         zsf[cond1]= zgw[cond1]
         
         # normal condition: groundwater table < surface water stage, where infiltration occurs
-        cond2= np.where(zgw<=zsf)
+        cond2= np.where(zgw<zsf)
         precipSoil= hsf[cond2]
         Wmaxm= self.WM[cond2] * (self.B[cond2]+1)
         SM[SM<0]= 0
         SM[SM>self.WM]= self.WM[SM>self.WM] #cannot exceed soil capacity
         A = Wmaxm * (1-(1.0-SM[cond2]/Wmaxm)**(1.0/(1.0+self.B[cond2])))
         _infiltration[cond2]=self.WM[cond2]*((1-A/Wmaxm)**(1+self.B[cond2])-(1-(A+precipSoil)/Wmaxm)**(1+self.B[cond2]))
-        _infiltration[cond2][_infiltration[cond2]>precipSoil]= precipSoil[_infiltration[cond2]>precipSoil]
-#         print(self.WM, A, Wmaxm, self.B, precipSoil)
         #horizontal flow
         # Here we use Bates et al. (2010)
-        s0= self.grid.calc_grad_at_link(zsf)
+        s0= self.grid.calc_grad_at_link(zsf) * (-1) #change to flow direction
         qsf_link= self.grid.dx/self.friction_link * hsf_link**(5/3)*abs(s0)**0.5*np.sign(s0) #link value
-#         qsf_link= (qsf_link-GRAVITY*hsf_link*dt*abs(s0))/(1.0+GRAVITY+\
-#                     hsf_link*dt*self.friction_link**2*abs(qsf_link)/hsf_link**(10.0/3.0))
         qsf_link[self.grid.status_at_link==LinkStatus.INACTIVE]= 0.0
         # sum all outflows
-        qsf= abs(self.discharge_out_mapper(qsf_link))
+        qsf_out= self.discharge_out_mapper(qsf_link)
+        qsf_in = self.discharge_in_mapper(qsf_link)
 
-        return self._precip - self._evap - qsf/self.grid.dx/self.grid.dy - self._infiltration/dt, _infiltration, SM, qsf, qsf_link
+        return self._precip - self._evap - (qsf_out - qsf_in)/self.grid.dx/self.grid.dy - self._infiltration/dt, zsf, _infiltration, SM, qsf_out, qsf_link
     
     #TODO add lateral flow in the unsaturated zone
     def _unsaturated_flux(self, zgw, SM, _infiltration, dt):
         hus= self.zsf_base - zgw
         hus[self.hus<0]=0
         _recharge= (_infiltration+SM)/self.WM/2*self.Kus
-        _recharge[_recharge>_infiltration]= _infiltration[_recharge>_infiltration]
+        _recharge[_recharge>_infiltration+SM]= _infiltration[_recharge>_infiltration+SM]
+        SM+= (_infiltration-_recharge)
         
-        return _infiltration/dt-_recharge/dt, _recharge
+        return _infiltration/dt-_recharge/dt, _recharge, SM
 
     def _ground_water_flux(self,zsf, zgw, zrv, _recharge, dt):
         '''
@@ -396,7 +392,7 @@ class CoupledHydrologicProcess(Component):
 
         cosa= np.cos(np.arctan(self.base_grad))
         #calculate hydraulic gradient
-        _zgw_grad= self.grid.calc_grad_at_link(zgw) * cosa
+        _zgw_grad= self.grid.calc_grad_at_link(zgw) * cosa * np.sign(self.base_grad) *(-1)
 
         #calculate groundwater velocity
         vel = -self.Kgw * _zgw_grad
@@ -409,14 +405,16 @@ class CoupledHydrologicProcess(Component):
         _q= hgw_link * vel
 
         #calculate flux divergence
-        dqdx= self.grid.calc_flux_div_at_node(_q)
+#         dqdx= self.grid.calc_flux_div_at_node(_q)
+        dqdx= self.discharge_out_mapper(_q)
+        dqdx[dqdx>_recharge/dt]= _recharge[dqdx>_recharge/dt]/dt
 
         #determine relative thickness
         soil_present= (zsf - self.zgw_base)>0.0
         rel_thickness = np.ones_like(zsf)
         rel_thickness[soil_present]= np.minimum(1, hgw/(self.zsf_base[soil_present]-self.zgw_base[soil_present]))
 
-        #calculate seepage to surface, only when groundwater table>surface elevation
+        #calculate exfiltration to surface, only when groundwater table>surface elevation
         cond= np.where(zgw>self.zsf_base)
         _qs= np.zeros_like(self.qsf)
         _qs[cond]= _regularize_G(rel_thickness[cond], self._r) * _regularize_R(_recharge[cond]/dt - dqdx[cond])
@@ -427,7 +425,7 @@ class CoupledHydrologicProcess(Component):
         qgw= dqdx * self.grid.dx*self.grid.dy
 
         # mass balance
-        _dhdt= (1/self._porosity) * (_recharge/dt - abs(_qs) - abs(dqdx))
+        _dhdt= (1/self._porosity) * (_recharge/dt - _qs - dqdx+ self.discharge_in_mapper(_q))
 
         return _dhdt, qgw_to_sf, qgw_to_riv, qgw
 
@@ -447,20 +445,14 @@ class CoupledHydrologicProcess(Component):
         zrv[zrv<self.zrv_btm[self._river_cores]]= self.zrv_btm[self._river_cores][zrv<self.zrv_btm[self._river_cores]]
         # 1) surface
         #   [1] If river stage>bank: overbank flow (Weir flow)
-        Qsurf_to_riv= np.zeros_like(qsf[self._river_cores])
-        cond1= np.where(zrv>self.zrv_bank)[0]
-        if len(cond1)>0:
-            Qweir= - self._cwr * (2*GRAVITY*(zrv[cond1] - self.zrv_bank[cond1])**0.5*self.grid.dy*\
-                (zrv[cond1] - self.zrv_bank[cond1]))
-            Qsurf_to_riv[cond1]= Qweir
-        #   [2] If river stage<bank: inflow
-        cond2= np.where(zrv<=self.zrv_bank)
-        Qinflow=  self._cwr * (2*GRAVITY*(hsf[self._river_cores][cond2]))**0.5*\
-                    self.grid.dy*(hsf[self._river_cores][cond2])
-        
-        Qsurf_to_riv[cond2]= Qinflow
-        cond= np.where(Qsurf_to_riv+qsf[self._river_cores]<0)
-        Qsurf_to_riv[cond]= qsf[self._river_cores][cond] # In case surface flow < Qinflow, maximum inflow would be qsf to balance water
+        links_at_river_core= self.grid.links_at_node[self._river_cores]
+        qsurf_to_riv_link= np.zeros_like(qsf_link[links_at_river_core])
+        qweir= self._cwr * (2 * GRAVITY*abs(self.grid.calc_diff_at_link(zsf))**0.5*self.grid.dy*self.grid.calc_diff_at_link(zsf))[links_at_river_core] * (-1)
+#         print(qweir.shape)
+
+        qweir[abs(qweir)>abs(qsf_link[links_at_river_core])]= abs(qsf_link[links_at_river_core][abs(qweir)>abs(qsf_link[links_at_river_core])])
+        qweir[qweir>0]= 0
+        Qsurf_to_riv= np.nansum(abs(qweir), axis=1) # In case surface flow < Qinflow, maximum inflow would be qsf to balance water
         # 2) subsurface
         #   [1] If groundwater table>river bed (inflow)
         Qsub_to_riv = np.zeros_like(qsf[self._river_cores])
@@ -470,8 +462,7 @@ class CoupledHydrologicProcess(Component):
             Qsub_to_riv[cond1]= qgw_to_riv[cond1] # positive
         #   [2] If ground water table < river bed (recharge) Darcy's law q=dh/dx * Ksat
         cond2= np.where(zgw[self._river_cores]<self.zrv_btm[self._river_cores])
-        Qsub_to_riv[cond2]= - (zrv[cond2]-self.zrv_btm[self._river_cores][cond2])*self.Kus[self._river_cores][cond2]*\
-                                self.grid.dx # negative sign to represent direction
+        Qsub_to_riv[cond2]= - (zrv[cond2]-self.zrv_btm[self._river_cores][cond2])*self.Kus[self._river_cores][cond2]*self.grid.dx # negative sign to represent direction
         _recharge_next=-Qsub_to_riv.copy()
         _recharge_next[cond1]=0
         zgw[self._river_cores]+= _recharge_next/self.grid.dx/self.grid.dx * dt
@@ -480,18 +471,20 @@ class CoupledHydrologicProcess(Component):
         # 3) Downward flow: Manning equation
 
         Qdown= self._apply_manning_eq(zrv)      
-        self.map_node_to_downstream_link(Qdown, self._river_cores)
-
+        qsf_link= self.map_node_to_downstream_link(Qdown, self._river_cores, qsf_link)
+        Qdown= self.discharge_in_mapper(qsf_link)[self._river_cores]
+#         print(qsf_link)
         # 4) receiption of upstream flow
-        Qup= abs(self.discharge_in_mapper(qsf_link)[self._river_cores])
+        Qup= abs(self.discharge_out_mapper(qsf_link)[self._river_cores])
 
 #         print(Qsurf_to_riv, Qsub_to_riv, Qup, Qdown)
         
-        qsf[self._river_cores]= (Qup+Qsub_to_riv+Qsurf_to_riv-Qdown)
+        qsf[self._river_cores]= (Qup+Qsub_to_riv+Qsurf_to_riv-abs(Qdown))
+        self.grid['node']['surface_water__discharge'][:]= qsf
 
-        return (Qsurf_to_riv + Qsub_to_riv + Qup + Qdown)/self.grid.dx/self.grid.dy, qsf
+        return (Qsurf_to_riv + Qsub_to_riv + Qup - abs(Qdown))/self.grid.dx/self.grid.dy, qsf
 
-    def map_node_to_downstream_link(self, values_at_node, node_ids):
+    def map_node_to_downstream_link(self, values_at_node, node_ids, qsf_link):
         '''
         Inputs:
         ----------------------
@@ -503,7 +496,9 @@ class CoupledHydrologicProcess(Component):
         values_at_link
         '''
         links= self._flow_dir.links_to_receiver[node_ids]
-        self.qsf_link[links]= values_at_node
+        qsf_link[links]= values_at_node
+        
+        return qsf_link
         
     def discharge_in_mapper(self, input_discharge):
         '''
@@ -595,7 +590,7 @@ class CoupledHydrologicProcess(Component):
         slope= self.grid.calc_grad_at_link(self.zrv_btm)[self._river_cores][cond]
 #         print(slope)
 #         roughness= self.grid.map_max_of_link_nodes_to_link(self.riv_roughness)
-        downQ[cond]= cross_section_area/self.rv_roughness[self._river_cores][cond]*(cross_section_area/wet_perimeter)**2/3*abs(slope)**0.5*np.sign(slope)
+        downQ[cond]= cross_section_area/self.rv_roughness[self._river_cores][cond]*(cross_section_area/wet_perimeter)**2/3*abs(slope)**0.5*np.sign(slope)*(-1)
         
         return downQ
     
